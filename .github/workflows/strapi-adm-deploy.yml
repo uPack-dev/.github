@@ -40,7 +40,33 @@ on:
         default: ubuntu-latest
 
 jobs:
+  preflight:
+    name: Check secrets and SSH
+    runs-on: ${{ inputs.runner }}
+    environment: production
+    env:
+      SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+      SERVER_HOST: ${{ secrets.SERVER_HOST }}
+      SERVER_USER: ${{ secrets.SERVER_USER }}
+      ADM_TOOLS_KEY: ${{ secrets.ADM_TOOLS_KEY }}
+      HOST_ID: ${{ inputs.host-id || vars.HOST_ID }}
+      TARGET: ${{ inputs.target }}
+    steps:
+      - name: Required secrets and variables
+        run: |
+          missing=
+          for v in SERVER_SSH_KEY SERVER_HOST SERVER_USER ADM_TOOLS_KEY HOST_ID TARGET; do
+            [ -n "${!v}" ] || missing="$missing $v"
+          done
+          [ -z "$missing" ] || { echo "::error::Missing or empty:$missing"; exit 1; }
+      - name: SSH connection
+        run: |
+          umask 077; printf '%s\n' "$SERVER_SSH_KEY" > key
+          ssh -i key -o BatchMode=yes -o StrictHostKeyChecking=no -o IdentitiesOnly=yes \
+            "$SERVER_USER@$SERVER_HOST" "mkdir -p '$TARGET' && echo 'ssh ok, target exists'"
+
   deploy:
+    needs: preflight
     runs-on: ${{ inputs.runner }}
     environment: production
     defaults:
@@ -75,6 +101,8 @@ jobs:
         run: |
           eval "$(jq -r 'to_entries[] | "export \(.key)=\(.value | @sh)"' <<< "$ALL_SECRETS")"
           printf '%s\n' "$DOTENV" | envsubst > .env
+          empty=$(grep -E '^[A-Z_]+=$' .env | cut -d= -f1 | tr '\n' ' ')
+          [ -z "$empty" ] || echo "::warning::Empty values in .env: $empty"
 
       - name: Upload project via SSH
         uses: easingthemes/ssh-deploy@v4
