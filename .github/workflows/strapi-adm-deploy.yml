@@ -37,7 +37,7 @@ on:
         default: '22.21.1'
       runner:
         type: string
-        default: blacksmith-2vcpu-ubuntu-2404
+        default: ubuntu-latest
 
 jobs:
   deploy:
