@@ -1,0 +1,102 @@
+# Reusable: lint, build a Nuxt SSR app and rsync `.output/` to adm.tools
+# hosting, then reload the Node app. Call with `secrets: inherit`; the
+# `production` environment is resolved in the calling repository.
+#
+# Required in the caller: secrets SERVER_SSH_KEY, SERVER_HOST, SERVER_USER,
+# ADM_TOOLS_KEY; variable HOST_ID.
+name: Nuxt → adm.tools (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      target:
+        description: Remote directory that receives .output/, e.g. site.com/www/.output
+        required: true
+        type: string
+      working-directory:
+        description: Directory with the Nuxt app
+        type: string
+        default: .
+      build-env:
+        description: Multiline KEY=VALUE list exported for `pnpm build`
+        type: string
+        default: ''
+      node-version:
+        type: string
+        default: '22.21.1'
+      runner:
+        type: string
+        default: blacksmith-2vcpu-ubuntu-2404
+
+jobs:
+  lint:
+    runs-on: ${{ inputs.runner }}
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: ${{ inputs.working-directory }}/package.json
+          run_install: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: pnpm
+          cache-dependency-path: ${{ inputs.working-directory }}/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+
+  deploy:
+    needs: lint
+    runs-on: ${{ inputs.runner }}
+    environment: production
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: ${{ inputs.working-directory }}/package.json
+          run_install: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: pnpm
+          cache-dependency-path: ${{ inputs.working-directory }}/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+
+      - name: Cache Nuxt Fonts
+        uses: actions/cache@v5
+        with:
+          path: ${{ inputs.working-directory }}/node_modules/.cache/nuxt/fonts
+          key: ${{ runner.os }}-nuxt-fonts-${{ hashFiles(format('{0}/pnpm-lock.yaml', inputs.working-directory)) }}
+          restore-keys: |
+            ${{ runner.os }}-nuxt-fonts-
+
+      - name: Build Nuxt SSR
+        env:
+          NODE_ENV: production
+          BUILD_ENV: ${{ inputs.build-env }}
+        run: |
+          set -a; eval "$BUILD_ENV"; set +a
+          pnpm build
+
+      - name: Upload .output via SSH
+        uses: easingthemes/ssh-deploy@v4
+        with:
+          SSH_PRIVATE_KEY: ${{ secrets.SERVER_SSH_KEY }}
+          REMOTE_HOST: ${{ secrets.SERVER_HOST }}
+          REMOTE_USER: ${{ secrets.SERVER_USER }}
+          ARGS: '-avzr --delete'
+          SOURCE: ${{ inputs.working-directory }}/.output/
+          TARGET: ${{ inputs.target }}
+
+      - name: Reload Node server
+        run: |
+          curl --fail --show-error --silent -X POST "https://adm.tools/action/hosting/account/nodejs/reload" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${{ secrets.ADM_TOOLS_KEY }}" \
+            -d '{"host_id": "${{ vars.HOST_ID }}"}'
