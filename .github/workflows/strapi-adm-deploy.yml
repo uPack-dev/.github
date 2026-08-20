@@ -82,7 +82,7 @@ jobs:
           SSH_PRIVATE_KEY: ${{ secrets.SERVER_SSH_KEY }}
           REMOTE_HOST: ${{ secrets.SERVER_HOST }}
           REMOTE_USER: ${{ secrets.SERVER_USER }}
-          SSH_CMD_ARGS: -o IdentitiesOnly=yes
+          SSH_CMD_ARGS: -o StrictHostKeyChecking=no -o IdentitiesOnly=yes
           ARGS: "-avzr --delete --exclude='public/uploads/' --exclude='.git/' --exclude='.tmp/' --exclude='node_modules/'"
           SOURCE: ${{ inputs.working-directory }}/
           TARGET: ${{ inputs.target }}

@@ -99,7 +99,7 @@ jobs:
           SSH_PRIVATE_KEY: ${{ secrets.SERVER_SSH_KEY }}
           REMOTE_HOST: ${{ secrets.SERVER_HOST }}
           REMOTE_USER: ${{ secrets.SERVER_USER }}
-          SSH_CMD_ARGS: -o IdentitiesOnly=yes
+          SSH_CMD_ARGS: -o StrictHostKeyChecking=no -o IdentitiesOnly=yes
           ARGS: '-avzr --delete'
           SOURCE: ${{ inputs.working-directory }}/.output/
           TARGET: ${{ inputs.target }}/.output
