@@ -1,22 +1,42 @@
 # uPack-dev/.github
 
-Shared GitHub Actions workflows.
+Shared GitHub Actions workflows. Both deploy to adm.tools hosting and expect in
+the calling repo (environment `production`): secrets `SERVER_SSH_KEY`,
+`SERVER_HOST`, `SERVER_USER`, `ADM_TOOLS_KEY` and variable `HOST_ID`.
 
-## `dokploy-dev.yml`
+## `nuxt-adm-deploy.yml`
 
-Builds a Docker image on push to `dev`, pushes it to GHCR (`:dev`, `:dev-<sha>`)
-and pings the repo's `DOKPLOY_WEBHOOK_URL` secret (environment `dev`).
+Lint → build → rsync `.output/` → reload Node.
 
 ```yaml
 jobs:
   deploy:
-    uses: uPack-dev/.github/.github/workflows/dokploy-dev.yml@main
+    uses: uPack-dev/.github/.github/workflows/nuxt-adm-deploy.yml@main
     secrets: inherit
     with:
-      image: ghcr.io/upack-dev/<name>
-      # context: ./backend          # default .
-      # dockerfile: ./backend/Dockerfile
-      # runner: blacksmith-4vcpu-ubuntu-2404
-      # build-args: |
-      #   NUXT_STRAPI_URL=${{ vars.NUXT_STRAPI_URL_DEV }}
+      target: site.com/www/.output
+      # working-directory: ./frontend
+      build-env: |
+        NUXT_STRAPI_URL=${{ vars.NUXT_STRAPI_URL }}
+        STRAPI_API_KEY=${{ secrets.STRAPI_API_KEY }}
+```
+
+## `strapi-adm-deploy.yml`
+
+Build admin → write `.env` → rsync project (without `node_modules`,
+`public/uploads`, `.tmp`) → install prod deps on the server → reload Node.
+
+```yaml
+jobs:
+  deploy:
+    uses: uPack-dev/.github/.github/workflows/strapi-adm-deploy.yml@main
+    secrets: inherit
+    with:
+      target: site.com/strapi/
+      # working-directory: ./backend
+      # package-manager: pnpm          # default yarn
+      dotenv: |
+        HOST=0.0.0.0
+        APP_KEYS=${{ secrets.APP_KEYS }}
+        ...
 ```
