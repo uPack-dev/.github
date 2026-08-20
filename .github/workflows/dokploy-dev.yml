@@ -1,0 +1,81 @@
+# Reusable: build a Docker image, push it to GHCR as :dev and :dev-<sha>,
+# then ping the caller's Dokploy webhook. Call it with `secrets: inherit`;
+# the `dev` environment is resolved in the calling repository.
+name: Dokploy Dev (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      image:
+        description: Full image name, e.g. ghcr.io/upack-dev/warehouse
+        required: true
+        type: string
+      context:
+        description: Docker build context
+        type: string
+        default: .
+      dockerfile:
+        description: Dockerfile path, relative to the repo root
+        type: string
+        default: ./Dockerfile
+      build-args:
+        description: Multiline KEY=VALUE list passed to docker build
+        type: string
+        default: ''
+      runner:
+        type: string
+        default: blacksmith-2vcpu-ubuntu-2404
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-push-deploy:
+    name: Build, push, deploy
+    runs-on: ${{ inputs.runner }}
+    environment: dev
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker builder
+        uses: useblacksmith/setup-docker-builder@v1
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ inputs.image }}
+          tags: |
+            type=raw,value=dev
+            type=sha,format=short,prefix=dev-
+
+      - name: Build and push image
+        uses: useblacksmith/build-push-action@v2
+        with:
+          context: ${{ inputs.context }}
+          file: ${{ inputs.dockerfile }}
+          push: true
+          platforms: linux/amd64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: ${{ inputs.build-args }}
+
+      - name: Trigger Dokploy deployment
+        env:
+          DOKPLOY_WEBHOOK_URL: ${{ secrets.DOKPLOY_WEBHOOK_URL }}
+        run: |
+          if [ -z "$DOKPLOY_WEBHOOK_URL" ]; then
+            echo "DOKPLOY_WEBHOOK_URL secret is not configured; image was pushed only."
+            exit 0
+          fi
+          curl --fail --show-error --silent "$DOKPLOY_WEBHOOK_URL"
