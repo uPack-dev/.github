@@ -6,7 +6,8 @@ the calling repo (environment `production`): secrets `SERVER_SSH_KEY`,
 
 ## `nuxt-adm-deploy.yml`
 
-Lint → build → rsync `.output/` → reload Node.
+Lint → build → rsync `.output/` into `<target>/.output` → write a start-script
+`package.json` into the target root → reload Node.
 
 ```yaml
 jobs:
@@ -14,7 +15,7 @@ jobs:
     uses: uPack-dev/.github/.github/workflows/nuxt-adm-deploy.yml@main
     secrets: inherit
     with:
-      target: site.com/www/.output
+      target: site.com/www
       # working-directory: ./frontend
       build-env: |
         NUXT_STRAPI_URL=${{ vars.NUXT_STRAPI_URL }}

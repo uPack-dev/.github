@@ -1,5 +1,6 @@
-# Reusable: lint, build a Nuxt SSR app and rsync `.output/` to adm.tools
-# hosting, then reload the Node app. Call with `secrets: inherit`; the
+# Reusable: lint, build a Nuxt SSR app, rsync `.output/` into `<target>/.output`
+# on adm.tools hosting, write a `package.json` start script into the target
+# root, then reload the Node app. Call with `secrets: inherit`; the
 # `production` environment is resolved in the calling repository.
 #
 # Required in the caller: secrets SERVER_SSH_KEY, SERVER_HOST, SERVER_USER,
@@ -10,7 +11,7 @@ on:
   workflow_call:
     inputs:
       target:
-        description: Remote directory that receives .output/, e.g. site.com/www/.output
+        description: Remote app root that receives package.json and .output/, e.g. site.com/www
         required: true
         type: string
       working-directory:
@@ -96,7 +97,16 @@ jobs:
           REMOTE_USER: ${{ secrets.SERVER_USER }}
           ARGS: '-avzr --delete'
           SOURCE: ${{ inputs.working-directory }}/.output/
-          TARGET: ${{ inputs.target }}
+          TARGET: ${{ inputs.target }}/.output
+
+      - name: Write start script
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            printf '%s\n' '{' '  "scripts": {' '    "start": "NODE_ENV=production node .output/server/index.mjs"' '  }' '}' > ${{ inputs.target }}/package.json
 
       - name: Reload Node server
         run: |
