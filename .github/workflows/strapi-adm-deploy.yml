@@ -125,19 +125,10 @@ jobs:
           printf 'Host deploy\n  HostName %s\n  User %s\n  IdentityFile ~/.ssh/deploy_key\n  IdentitiesOnly yes\n  StrictHostKeyChecking no\n  ServerAliveInterval 30\n  ServerAliveCountMax 20\n' \
             "${{ secrets.SERVER_HOST }}" "${{ secrets.SERVER_USER }}" > ~/.ssh/config
 
-      - name: Dry-run upload (refuse deletions outside known dirs)
-        # Only node_modules/, dist/, build/, .strapi/ may lose files on a normal
-        # deploy; anything else being deleted means the target is wrong.
-        run: |
-          del=$(rsync -azn --delete --exclude=public/uploads/ --exclude=.git/ --exclude=.tmp/ \
-            --out-format='%o %n' ./ deploy:${{ inputs.target }}/ | grep '^del' | sed 's/^del[a-z]* //' || true)
-          echo "would delete $(printf '%s' "$del" | grep -c . || true) files"
-          bad=$(printf '%s\n' "$del" | grep -v -E '^(node_modules|dist|build|\.strapi)/' | grep . || true)
-          [ -z "$bad" ] || { printf '%s\n' "$bad" | head -50; echo "::error::Refusing: deletions outside node_modules/dist/build/.strapi"; exit 1; }
-
       - name: Upload project
+        # No --delete on purpose: a deploy must never be able to remove files.
         run: |
-          rsync -az --delete --exclude=public/uploads/ --exclude=.git/ --exclude=.tmp/ \
+          rsync -az --exclude=public/uploads/ --exclude=.git/ --exclude=.tmp/ \
             ./ deploy:${{ inputs.target }}/
 
       - name: Reload Node server
