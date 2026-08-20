@@ -1,6 +1,8 @@
-# Reusable: build Strapi, write the production .env, rsync the project to
-# adm.tools hosting (keeping node_modules, uploads and .tmp on the server),
-# install prod dependencies there and reload the Node app. Call with
+# Reusable: build Strapi, prune to production dependencies, write the
+# production .env, rsync the project including node_modules to adm.tools
+# hosting (uploads and .tmp stay on the server) and reload the Node app.
+# Nothing is installed on the server: shared hosting has too little CPU for
+# a package manager, and CI runs the same linux-x64 / Node 22 as the host. Call with
 # `secrets: inherit`; the `production` environment is resolved in the caller.
 #
 # Required in the caller: secrets SERVER_SSH_KEY, SERVER_HOST, SERVER_USER,
@@ -94,6 +96,9 @@ jobs:
         env:
           NODE_ENV: production
 
+      - name: Prune to production dependencies
+        run: ${{ inputs.package-manager == 'pnpm' && 'pnpm prune --prod' || 'yarn install --production --frozen-lockfile' }}
+
       - name: Write production .env
         env:
           DOTENV: ${{ inputs.dotenv }}
@@ -114,11 +119,8 @@ jobs:
 
       - name: Upload project
         run: |
-          rsync -az --delete --exclude=public/uploads/ --exclude=.git/ --exclude=.tmp/ --exclude=node_modules/ \
+          rsync -az --delete --exclude=public/uploads/ --exclude=.git/ --exclude=.tmp/ \
             ./ deploy:${{ inputs.target }}/
-
-      - name: Install dependencies on server
-        run: ssh deploy "cd ${{ inputs.target }} && node -v && ${{ inputs.package-manager == 'pnpm' && 'npx --yes pnpm@11 install --prod --frozen-lockfile --reporter=append-only' || 'npx yarn install --production --frozen-lockfile' }}"
 
       - name: Reload Node server
         run: |

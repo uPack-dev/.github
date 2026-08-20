@@ -26,8 +26,9 @@ exported as an env var of the same name during the build.
 
 ## `strapi-adm-deploy.yml`
 
-Build admin → write `.env` → rsync project (without `node_modules`,
-`public/uploads`, `.tmp`) → install prod deps on the server → reload Node.
+Build admin → prune to prod deps → write `.env` → rsync project incl.
+`node_modules` (without `public/uploads`, `.tmp`) → reload Node. Nothing is
+installed on the server.
 
 ```yaml
 jobs:
