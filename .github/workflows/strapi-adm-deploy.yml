@@ -4,7 +4,7 @@
 # `secrets: inherit`; the `production` environment is resolved in the caller.
 #
 # Required in the caller: secrets SERVER_SSH_KEY, SERVER_HOST, SERVER_USER,
-# ADM_TOOLS_KEY; variable HOST_ID.
+# ADM_TOOLS_KEY; variable HOST_ID (or the `host-id` input).
 name: Strapi → adm.tools (reusable)
 
 on:
@@ -26,6 +26,10 @@ on:
         description: yarn or pnpm
         type: string
         default: yarn
+      host-id:
+        description: adm.tools Node app id; defaults to the HOST_ID variable
+        type: string
+        default: ''
       node-version:
         type: string
         default: '22.21.1'
@@ -92,4 +96,4 @@ jobs:
           curl --fail --show-error --silent -X POST "https://adm.tools/action/hosting/account/nodejs/reload" \
             -H "Content-Type: application/json" \
             -H "Authorization: Bearer ${{ secrets.ADM_TOOLS_KEY }}" \
-            -d '{"host_id": "${{ vars.HOST_ID }}"}'
+            -d '{"host_id": "${{ inputs.host-id || vars.HOST_ID }}"}'

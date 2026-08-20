@@ -2,7 +2,7 @@
 
 Shared GitHub Actions workflows. Both deploy to adm.tools hosting and expect in
 the calling repo (environment `production`): secrets `SERVER_SSH_KEY`,
-`SERVER_HOST`, `SERVER_USER`, `ADM_TOOLS_KEY` and variable `HOST_ID`.
+`SERVER_HOST`, `SERVER_USER`, `ADM_TOOLS_KEY` and variable `HOST_ID` (or pass `host-id` per app).
 
 ## `nuxt-adm-deploy.yml`
 
