@@ -19,8 +19,10 @@ jobs:
       # working-directory: ./frontend
       build-env: |
         NUXT_STRAPI_URL=${{ vars.NUXT_STRAPI_URL }}
-        STRAPI_API_KEY=${{ secrets.STRAPI_API_KEY }}
 ```
+
+`secrets` cannot be used inside `with:`; instead every inherited secret is
+exported as an env var of the same name during the build.
 
 ## `strapi-adm-deploy.yml`
 
@@ -38,6 +40,6 @@ jobs:
       # package-manager: pnpm          # default yarn
       dotenv: |
         HOST=0.0.0.0
-        APP_KEYS=${{ secrets.APP_KEYS }}
-        ...
+        APP_KEYS=$APP_KEYS        # secrets by name, substituted with envsubst
+        DATABASE_NAME=${{ vars.DATABASE_NAME }}
 ```

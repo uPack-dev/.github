@@ -15,7 +15,9 @@ on:
         required: true
         type: string
       dotenv:
-        description: Full contents of the production .env
+        description: >-
+          Template of the production .env. Use `vars` inline and reference
+          secrets as `$NAME` — every inherited secret is substituted by name.
         required: true
         type: string
       working-directory:
@@ -69,7 +71,10 @@ jobs:
       - name: Write production .env
         env:
           DOTENV: ${{ inputs.dotenv }}
-        run: printf '%s\n' "$DOTENV" > .env
+          ALL_SECRETS: ${{ toJSON(secrets) }}
+        run: |
+          eval "$(jq -r 'to_entries[] | "export \(.key)=\(.value | @sh)"' <<< "$ALL_SECRETS")"
+          printf '%s\n' "$DOTENV" | envsubst > .env
 
       - name: Upload project via SSH
         uses: easingthemes/ssh-deploy@v4

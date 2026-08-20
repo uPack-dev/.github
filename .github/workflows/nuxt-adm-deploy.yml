@@ -19,7 +19,9 @@ on:
         type: string
         default: .
       build-env:
-        description: Multiline KEY=VALUE list exported for `pnpm build`
+        description: >-
+          Multiline KEY=VALUE list exported for `pnpm build` (use `vars` here —
+          every inherited secret is exported under its own name automatically).
         type: string
         default: ''
       host-id:
@@ -85,7 +87,9 @@ jobs:
         env:
           NODE_ENV: production
           BUILD_ENV: ${{ inputs.build-env }}
+          ALL_SECRETS: ${{ toJSON(secrets) }}
         run: |
+          eval "$(jq -r 'to_entries[] | "export \(.key)=\(.value | @sh)"' <<< "$ALL_SECRETS")"
           set -a; eval "$BUILD_ENV"; set +a
           pnpm build
 
