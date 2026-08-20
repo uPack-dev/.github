@@ -109,7 +109,7 @@ jobs:
           SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
         run: |
           umask 077; mkdir -p ~/.ssh; printf '%s\n' "$SERVER_SSH_KEY" > ~/.ssh/deploy_key
-          printf 'Host deploy\n  HostName %s\n  User %s\n  IdentityFile ~/.ssh/deploy_key\n  IdentitiesOnly yes\n  StrictHostKeyChecking no\n' \
+          printf 'Host deploy\n  HostName %s\n  User %s\n  IdentityFile ~/.ssh/deploy_key\n  IdentitiesOnly yes\n  StrictHostKeyChecking no\n  ServerAliveInterval 30\n  ServerAliveCountMax 20\n' \
             "${{ secrets.SERVER_HOST }}" "${{ secrets.SERVER_USER }}" > ~/.ssh/config
 
       - name: Upload project
@@ -118,7 +118,7 @@ jobs:
             ./ deploy:${{ inputs.target }}/
 
       - name: Install dependencies on server
-        run: ssh deploy "cd ${{ inputs.target }} && ${{ inputs.package-manager == 'pnpm' && 'npx --yes pnpm@11 install --prod --frozen-lockfile' || 'npx yarn install --production --frozen-lockfile' }}"
+        run: ssh deploy "cd ${{ inputs.target }} && node -v && ${{ inputs.package-manager == 'pnpm' && 'npx --yes pnpm@11 install --prod --frozen-lockfile --reporter=append-only' || 'npx yarn install --production --frozen-lockfile' }}"
 
       - name: Reload Node server
         run: |
