@@ -1,0 +1,101 @@
+# Reusable: build an image from a subdirectory of a monorepo, push it to GHCR
+# and poke Dokploy's redeploy webhook. One call per app — gate each caller on
+# its own `paths:` filter, or every push rebuilds everything.
+#
+# Call with `secrets: inherit`. The webhook lives in the GitHub environment
+# named by `environment`, under the secret DOKPLOY_WEBHOOK_URL, so two apps in
+# one repo get one environment each instead of sharing a secret name.
+name: Docker → GHCR → Dokploy (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      name:
+        description: App name; the image becomes ghcr.io/<repo>-<name>
+        required: true
+        type: string
+      context:
+        description: Build context, e.g. ./backend
+        required: true
+        type: string
+      environment:
+        description: GitHub environment holding DOKPLOY_WEBHOOK_URL
+        type: string
+        default: dev
+      dockerfile:
+        description: Dockerfile path; defaults to <context>/Dockerfile
+        type: string
+        default: ''
+      tag:
+        description: Channel tag to move, alongside an immutable <tag>-<sha> one
+        type: string
+        default: dev
+      build-args:
+        description: >-
+          Multiline KEY=VALUE passed to the build. Baked into the image and
+          readable from its history — build config only, never secrets.
+        type: string
+        default: ''
+      platforms:
+        type: string
+        default: linux/amd64
+      runner:
+        type: string
+        default: blacksmith-4vcpu-ubuntu-2404
+
+jobs:
+  build-push-deploy:
+    name: Build, push, deploy
+    runs-on: ${{ inputs.runner }}
+    environment: ${{ inputs.environment }}
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          # metadata-action lowercases this, so a mixed-case repo name is fine.
+          images: ghcr.io/${{ github.repository }}-${{ inputs.name }}
+          tags: |
+            type=raw,value=${{ inputs.tag }}
+            type=sha,format=short,prefix=${{ inputs.tag }}-
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ inputs.context }}
+          file: ${{ inputs.dockerfile || format('{0}/Dockerfile', inputs.context) }}
+          push: true
+          platforms: ${{ inputs.platforms }}
+          build-args: ${{ inputs.build-args }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ inputs.name }}
+          cache-to: type=gha,mode=max,scope=${{ inputs.name }}
+
+      - name: Trigger Dokploy deployment
+        env:
+          DOKPLOY_WEBHOOK_URL: ${{ secrets.DOKPLOY_WEBHOOK_URL }}
+        run: |
+          if [ -z "$DOKPLOY_WEBHOOK_URL" ]; then
+            echo "::warning::DOKPLOY_WEBHOOK_URL is not set in environment '${{ inputs.environment }}'; the image was pushed but nothing was redeployed."
+            exit 0
+          fi
+
+          curl --fail --show-error --silent "$DOKPLOY_WEBHOOK_URL"
