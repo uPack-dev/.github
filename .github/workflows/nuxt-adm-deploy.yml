@@ -1,7 +1,8 @@
 # Reusable: lint, build a Nuxt SSR app, rsync `.output/` into `<target>/.output`
 # on adm.tools hosting, write a `package.json` start script into the target
 # root, then reload the Node app. Call with `secrets: inherit`; the
-# `production` environment is resolved in the calling repository.
+# `production` environment is resolved by this workflow's own jobs, so
+# environment-scoped secrets and vars are read here, not in the caller.
 #
 # Required in the caller: secrets SERVER_SSH_KEY, SERVER_HOST, SERVER_USER,
 # ADM_TOOLS_KEY; variable HOST_ID (or the `host-id` input).
@@ -20,8 +21,11 @@ on:
         default: .
       build-env:
         description: >-
-          Multiline KEY=VALUE list exported for `pnpm build` (use `vars` here —
-          every inherited secret is exported under its own name automatically).
+          Optional multiline KEY=VALUE list exported for `pnpm build`. Every
+          inherited secret and every `vars` entry is already exported under its
+          own name, so this is only needed to alias or override one, e.g.
+          `STRAPI_URL=$NUXT_STRAPI_URL`. Reference them as `$NAME`, never as a
+          vars expression: the caller cannot see environment-scoped variables.
         type: string
         default: ''
       host-id:
@@ -121,10 +125,26 @@ jobs:
         env:
           NODE_ENV: production
           BUILD_ENV: ${{ inputs.build-env }}
+          ALL_VARS: ${{ toJSON(vars) }}
           ALL_SECRETS: ${{ toJSON(secrets) }}
         run: |
-          eval "$(jq -r 'to_entries[] | "export \(.key)=\(.value | @sh)"' <<< "$ALL_SECRETS")"
-          set -a; eval "$BUILD_ENV"; set +a
+          # This job resolves the `production` environment, so environment-scoped
+          # vars and secrets are visible here. A caller's `with:` block is not in
+          # any environment, so `${{ vars.X }}` there silently yields "".
+          export_json() {
+            jq -r 'to_entries[]
+              | select(.key | test("^(PATH|HOME|SHELL|IFS|LD_.*|GITHUB_.*|RUNNER_.*)$") | not)
+              | "export \(.key)=\(.value | @sh)"'
+          }
+          eval "$(export_json <<< "$ALL_VARS")"
+          eval "$(export_json <<< "$ALL_SECRETS")"
+          # Drop `KEY=` lines: they are values a caller failed to resolve, and
+          # letting them through would blank out the var exported just above.
+          blank=$(printf '%s\n' "$BUILD_ENV" | grep -E '^[A-Za-z_][A-Za-z0-9_]*=$' | cut -d= -f1 | tr '\n' ' ')
+          [ -z "$blank" ] || echo "::warning::Ignored empty build-env values: $blank"
+          set -a
+          eval "$(printf '%s\n' "$BUILD_ENV" | grep -vE '^[A-Za-z_][A-Za-z0-9_]*=$')"
+          set +a
           pnpm build
 
       - name: Set up SSH

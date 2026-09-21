@@ -3,7 +3,9 @@
 # hosting (uploads and .tmp stay on the server) and reload the Node app.
 # Nothing is installed on the server: shared hosting has too little CPU for
 # a package manager, and CI runs the same linux-x64 / Node 22 as the host. Call with
-# `secrets: inherit`; the `production` environment is resolved in the caller.
+# `secrets: inherit`; the `production` environment is resolved by this
+# workflow's own jobs, so environment-scoped secrets and vars are read here,
+# not in the caller.
 #
 # Required in the caller: secrets SERVER_SSH_KEY, SERVER_HOST, SERVER_USER,
 # ADM_TOOLS_KEY; variable HOST_ID (or the `host-id` input).
@@ -18,8 +20,11 @@ on:
         type: string
       dotenv:
         description: >-
-          Template of the production .env. Use `vars` inline and reference
-          secrets as `$NAME` — every inherited secret is substituted by name.
+          Template of the production .env. Reference both secrets and `vars` as
+          `$NAME`: every inherited secret and every `vars` entry is substituted
+          by name. Never use a vars expression here, the caller cannot see
+          environment-scoped variables. Lines that resolve to an empty value are
+          dropped, so write literal fallbacks instead of relying on `||`.
         required: true
         type: string
       working-directory:
@@ -110,12 +115,28 @@ jobs:
       - name: Write production .env
         env:
           DOTENV: ${{ inputs.dotenv }}
+          ALL_VARS: ${{ toJSON(vars) }}
           ALL_SECRETS: ${{ toJSON(secrets) }}
         run: |
-          eval "$(jq -r 'to_entries[] | "export \(.key)=\(.value | @sh)"' <<< "$ALL_SECRETS")"
+          # This job resolves the `production` environment, so environment-scoped
+          # vars and secrets are visible here. A caller's `with:` block is not in
+          # any environment, so `${{ vars.X }}` there silently yields "".
+          export_json() {
+            jq -r 'to_entries[]
+              | select(.key | test("^(PATH|HOME|SHELL|IFS|LD_.*|GITHUB_.*|RUNNER_.*)$") | not)
+              | "export \(.key)=\(.value | @sh)"'
+          }
+          eval "$(export_json <<< "$ALL_VARS")"
+          eval "$(export_json <<< "$ALL_SECRETS")"
           printf '%s\n' "$DOTENV" | envsubst > .env
-          empty=$(grep -E '^[A-Z_]+=$' .env | cut -d= -f1 | tr '\n' ' ')
-          [ -z "$empty" ] || echo "::warning::Empty values in .env: $empty"
+          # A `KEY=` line means the template referenced something that resolved
+          # to nothing; drop it so Strapi falls back to its own default instead
+          # of reading an empty string.
+          empty=$(grep -E '^[A-Za-z_][A-Za-z0-9_]*=$' .env | cut -d= -f1 | tr '\n' ' ')
+          if [ -n "$empty" ]; then
+            echo "::warning::Dropped empty .env values: $empty"
+            sed -i -E '/^[A-Za-z_][A-Za-z0-9_]*=$/d' .env
+          fi
 
       - name: Set up SSH
         env:
